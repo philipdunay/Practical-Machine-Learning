@@ -1,0 +1,105 @@
+Prediction of the manner of sport exercise activity
+========================================================
+
+Dataset pml_training contains data about correct and incorrect ways to perform sport activities. The factor variable containing information on the way the exercise was done is "classe". Using dataset pml-testing, the goal is to predict the corresponding factor value. We tried three models: TreeBag, Random Forest and Generalized Boosted Regression.
+
+First, we load libraries and read the data 
+
+```{r}
+library(caret)
+library(randomForest)
+library(gbm)
+pml_train <- read.csv("pml-training.csv", stringsAsFactors = F)
+pml_test <- read.csv("pml-testing.csv", stringsAsFactors = F)
+```
+
+Columns 1:7 contain information which is not not relevant to the correctness of doing workout, so I removed them. Column 160 is the output "classe" for pml_train dataset and "problem_id" for pml_test. I also remove this column from data. Some of the data columns have "character" type, but contain numbers, so I converted "character" to "numeric" format. As data contains NA cells, I substituted NA with the value zero. The predicted variable is Classe = pml_train$classe.
+
+```{r}
+train <- pml_train[, -c(1:7, 160)]
+for (i in 1:ncol(train)) {
+  if (class(train[, i]) == "character") {
+    suppressWarnings(train[, i] <- as.numeric(train[, i]))    
+  }
+}
+train[is.na(train)] <- 0
+Classe <- factor(pml_train[, 160])
+```
+
+The same way the pml_test is processed
+```{r}
+testset <- pml_test[, -c(1:7, 160)]
+for (i in 1:ncol(testset)) {
+  if (class(testset[, i]) == "character") {
+    testset[, i] <- as.numeric(testset[, i])
+  }
+}
+testset[is.na(testset)] <- 0
+```
+
+Dataset pml_train contains 19622 rows, so I chose to use only small part (p=0.3) of the data for the training, 
+and the rest for the testing purposes.
+Ususally ~70% of data is used for training, but when I tried to use this chunk of data, it was a problem with memory and problem with the time of running of the method, both of them were unacceptably huge.    
+
+```{r}
+set.seed(32323)
+indexTrain <- createDataPartition(y = Classe, p = 0.3, list = FALSE)
+training <- train[indexTrain, ]
+testing <- train[-indexTrain, ]
+
+trainingClasse <- Classe[indexTrain] 
+testingClasse <- Classe[-indexTrain] 
+```
+
+For cross validation the number of folds is chosen not so high (5) to have low out-of-sample error and not to 
+overfit the model 
+
+```{r}
+fitControl <- trainControl(method = "cv", number = 5)
+```
+
+Three model are tried: TreeBag, Random Forest and Generalized Boosted Regression.
+
+```{r}
+set.seed(32323)
+fitTreeBag <- train(trainingClasse ~ ., method = "treebag", data = training, trControl = fitControl)
+resultTB <- predict(fitTreeBag, newdata = testing)
+confusionMatrix(resultTB, testingClasse)
+```
+
+```{r}
+set.seed(32323)
+fitRF <- train(trainingClasse ~ ., method = "rf", data=training, prox=T, trControl = fitControl) 
+resultRF <- predict(fitRF, newdata = testing)
+confusionMatrix(resultRF, testingClasse)
+```
+
+```{r}
+set.seed(32323)
+suppressWarnings(fitGBM <- train(trainingClasse ~ ., method = "gbm", data=training, verbose=F, trControl = fitControl)) 
+resultGBM <- predict(fitGBM, newdata = testing)
+confusionMatrix(resultGBM, testingClasse)
+```
+
+We can see, that the best method by the accuracy is the Random Forest (Accuracy = 98%)
+We calculate the results for pml-testing dataset using this mathod
+
+```{r}
+testClasse <- predict(fitRF, newdata = testset)
+```
+
+## Results
+In array testClasse we have the results for pml-testing dataset dataset.
+
+```{r}
+answers = testClasse
+pml_write_files = function(x) {
+  n = length(x)
+  for (i in 1:n) {
+    filename = paste0("problem_id_", i, ".txt")
+    write.table(x[i], file = filename, quote = FALSE, row.names = FALSE, 
+                col.names = FALSE)
+  }
+}
+pml_write_files(answers)
+```
